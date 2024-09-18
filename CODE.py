@@ -1,3 +1,5 @@
+# Importation des bibliothèques
+import streamlit as st
 import pandas as pd
 import numpy as np
 import seaborn as sns
@@ -10,206 +12,163 @@ from sklearn.cluster import KMeans
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from sklearn.metrics.pairwise import euclidean_distances
-import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
-from kaggle_secrets import UserSecretsClient
+import spotipy
 
-# 1. Importation des données
-df = pd.read_csv("data.csv")
-genre_data = pd.read_csv("data_w_genres.csv")
-year_data = pd.read_csv("data_by_year.csv")
-artist_data = pd.read_csv("data_by_artist.csv")
+# Utilisation directe des identifiants Spotify
+SPOTIPY_CLIENT_ID = "32a36e74ba994588b8238efb75551ddf"
+SPOTIPY_CLIENT_SECRET = "3ca67ec1b6ae48fc9e2df7d2ff3ee77a"
+SPOTIPY_REDIRECT_URI = "http://localhost:8501/callback"
 
-# 2. Exploration des données
-print(genre_data.info())
-
-# 3. Création de la colonne 'decade' dans year_data
-year_data["decade"] = year_data["year"].apply(lambda x: (x // 10) * 10)
-print(year_data.head())
-
-# 4. Visualisation des tendances par décennie
-plt.figure(figsize=(10, 6))
-sns.countplot(x='decade', data=year_data)
-plt.title('Distribution des pistes par décennie')
-plt.xlabel('Décennie')
-plt.ylabel('Nombre de pistes')
-plt.xticks(rotation=45)
-plt.show()
-
-# 5. Tendance des caractéristiques sonores au fil des décennies
-caract_sonores = ['acousticness', 'danceability', 'energy', 'instrumentalness', 'liveness', 'valence']
-fig = px.line(year_data, x='year', y=caract_sonores,
-              title='Tendance de diverses caractéristiques sonores au fil des décennies',
-              labels={'year': 'Année', 'value': 'Valeur'},
-              template='plotly_dark')
-fig.update_layout(
-    xaxis_title='Année',
-    yaxis_title='Valeur',
-    legend_title='Caractéristiques Sonores'
-)
-fig.show()
-
-# 6. Tendance du volume sonore au fil des décennies
-plt.figure(figsize=(14, 8))
-plt.plot(year_data['year'], year_data['loudness'], label='Loudness', color='red')
-plt.title('Tendance du volume sonore sur plusieurs décennies')
-plt.xlabel('YEAR')
-plt.ylabel('Loudness (dB)')
-plt.grid(True)
-plt.show()
-
-# 7. Analyse de la popularité par genre
-genre_popularity = genre_data.groupby('genres')['popularity'].mean().reset_index()
-top10_genres = genre_popularity.nlargest(10, 'popularity')
-sound_features = ['valence', 'energy', 'danceability', 'acousticness']
-top10_genres = genre_data[genre_data['genres'].isin(top10_genres['genres'])][['genres'] + sound_features]
-fig = px.bar(top10_genres, x='genres', y=sound_features,
-             barmode='group',
-             title='Tendance de diverses caractéristiques sonores sur les 10 principaux genres')
-fig.update_layout(
-    xaxis_title='Genres',
-    yaxis_title='Valeur',
-    legend_title='Caractéristiques Sonores'
-)
-fig.show()
-
-# 8. Nuage de mots pour les genres
-genres = genre_data['genres'].dropna()
-comment_words = ' '.join(genres)
-stopwords = set(STOPWORDS)
-wordcloud = WordCloud(width=800, height=800,
-                      background_color='white',
-                      stopwords=stopwords,
-                      max_words=40,
-                      min_font_size=10).generate(comment_words)
-plt.figure(figsize=(8, 8), facecolor=None)
-plt.imshow(wordcloud)
-plt.axis("off")
-plt.tight_layout(pad=0)
-plt.show()
-
-# 9. Nuage de mots pour les artistes
-artists = genre_data['artists'].dropna()
-comment_words = ' '.join(artists)
-wordcloud = WordCloud(width=800, height=800,
-                      background_color='white',
-                      stopwords=stopwords,
-                      min_word_length=3,
-                      max_words=40,
-                      min_font_size=10).generate(comment_words)
-plt.figure(figsize=(8, 8), facecolor=None)
-plt.imshow(wordcloud)
-plt.axis("off")
-plt.tight_layout(pad=0)
-plt.show()
-
-# 10. Artistes avec le plus de chansons produites
-artist_song_count = genre_data['artists'].value_counts().reset_index()
-artist_song_count.columns = ['artists', 'count']
-top10_most_song_produced_artists = artist_song_count.nlargest(10, 'count')
-print(top10_most_song_produced_artists[['count', 'artists']].sort_values('count', ascending=False))
-
-# 11. Artistes les plus populaires
-top_10_artists = genre_data[['popularity', 'artists']].sort_values('popularity', ascending=False).head(10)
-print(top_10_artists)
-
-# 12. Clustering des chansons
-X = genre_data.select_dtypes(include=[np.number])
-cluster_pipeline = Pipeline([
-    ('scaler', StandardScaler()),
-    ('kmeans', KMeans(n_clusters=12))
-])
-cluster_pipeline.fit(X)
-genre_data['cluster'] = cluster_pipeline.predict(X)
-
-# 13. Visualisation des clusters avec t-SNE
-tsne_pipeline = Pipeline([('scaler', StandardScaler()), ('tsne', TSNE(n_components=2, verbose=1))])
-genre_embedding = tsne_pipeline.fit_transform(X)
-projection = pd.DataFrame(columns=['x', 'y'], data=genre_embedding)
-projection['genres'] = genre_data['genres']
-projection['cluster'] = genre_data['cluster']
-fig = px.scatter(projection, x='x', y='y', color='cluster', hover_data=['x', 'y', 'genres'])
-fig.show()
-
-# 14. Clustering des chansons avec PCA
-song_cluster_pipeline = Pipeline([
-    ('scaler', StandardScaler()),
-    ('kmeans', KMeans(n_clusters=25, verbose=False))
-], verbose=False)
-song_cluster_pipeline.fit(X)
-song_cluster_labels = song_cluster_pipeline.predict(X)
-genre_data['cluster_label'] = song_cluster_labels
-
-pca_pipeline = Pipeline([('scaler', StandardScaler()), ('PCA', PCA(n_components=2))])
-song_embedding = pca_pipeline.fit_transform(X)
-projection = pd.DataFrame(columns=['x', 'y'], data=song_embedding)
-projection['title'] = genre_data['artists']
-projection['cluster'] = genre_data['cluster_label']
-fig = px.scatter(projection, x='x', y='y', color='cluster', hover_data=['x', 'y', 'title'])
-fig.show()
-
-# 15. Intégration de l'API Spotify
-user_secrets = UserSecretsClient()
-spotify_client_id = user_secrets.get_secret("SPOTIFY_CLIENT_ID")
-spotify_client_secret = user_secrets.get_secret("SPOTIFY_CLIENT_SECRET")
-spotify_credentials = SpotifyClientCredentials(client_id=spotify_client_id, client_secret=spotify_client_secret)
+# Configuration de l'authentification Spotify
+spotify_credentials = SpotifyClientCredentials(client_id=SPOTIPY_CLIENT_ID, client_secret=SPOTIPY_CLIENT_SECRET)
 sp = spotipy.Spotify(auth_manager=spotify_credentials)
 
-# 16. Recherche de chansons sur Spotify
+
+# 1. Importation des données
+@st.cache_data
+def load_data():
+    df = pd.read_csv("data.csv")
+    genre_data = pd.read_csv("data_w_genres.csv")
+    year_data = pd.read_csv("data_by_year.csv")
+    artist_data = pd.read_csv("data_by_artist.csv")
+    return df, genre_data, year_data, artist_data
+
+
+df, genre_data, year_data, artist_data = load_data()
+
+# Menu latéral
+st.sidebar.title("Menu d'Analyse Musicale")
+option = st.sidebar.selectbox(
+    'Sélectionnez une analyse',
+    ('Exploration des données', 'Tendances par décennie', 'Tendances des caractéristiques sonores',
+     'Analyse de la popularité par genre', 'Nuage de mots - Genres', 'Nuage de mots - Artistes',
+     'Clustering des chansons avec t-SNE', 'Clustering des chansons avec PCA', 'Recommandation musicale')
+)
+
+
+# Fonctions pour le système de recommandation musicale
 def find_song(spotify_client, song_name, artist_name=None):
     query = f"track:{song_name}"
     if artist_name:
         query += f" artist:{artist_name}"
-    results = spotify_client.search(q=query, type='track')
-    tracks = results['tracks']['items']
-    songs = []
-    for track in tracks:
-        song_info = {
-            'name': track['name'],
-            'artists': ', '.join(artist['name'] for artist in track['artists']),
-            'album': track['album']['name'],
-            'url': track['external_urls']['spotify'],
-            'id': track['id'],
-        }
-        songs.append(song_info)
-    return songs
-
-# 17. Obtenir les données d'une chanson
-def get_song_data(spotify_client, dataset, song_name, artist_name=None):
-    if artist_name:
-        song_data = dataset[(dataset['song_name'].str.lower() == song_name.lower()) &
-                            (dataset['artist_name'].str.lower() == artist_name.lower())]
-    else:
-        song_data = dataset[dataset['song_name'].str.lower() == song_name.lower()]
-    if not song_data.empty:
-        return song_data.iloc[0].to_dict()
-    query = f"track:{song_name}"
-    if artist_name:
-        query += f" artist:{artist_name}"
-    results = spotify_client.search(q=query, type='track')
+    results = spotify_client.search(q=query, type='track', limit=1)
     tracks = results['tracks']['items']
     if not tracks:
         return None
     track = tracks[0]
-    song_info = {
+    audio_features = spotify_client.audio_features(track['id'])[0]
+    song_data = {
         'name': track['name'],
-        'artists': ', '.join(artist['name'] for artist in track['artists']),
-        'album': track['album']['name'],
-        'url': track['external_urls']['spotify'],
+        'artists': ', '.join([artist['name'] for artist in track['artists']]),
         'id': track['id'],
+        'spotify_url': track['external_urls']['spotify'],
+        'danceability': audio_features['danceability'],
+        'energy': audio_features['energy'],
+        'key': audio_features['key'],
+        'loudness': audio_features['loudness'],
+        'mode': audio_features['mode'],
+        'speechiness': audio_features['speechiness'],
+        'acousticness': audio_features['acousticness'],
+        'instrumentalness': audio_features['instrumentalness'],
+        'liveness': audio_features['liveness'],
+        'valence': audio_features['valence'],
+        'tempo': audio_features['tempo']
     }
-    return song_info
+    return song_data
 
-# 18. Calculer le vecteur moyen pour une liste de chansons
-def get_mean_vector(dataset, song_list):
-    song_vectors = []
-    for song in song_list:
-        song_data = dataset[
-            (dataset['song_name'].str.lower() == song['name'].lower()) &
-            (dataset['artist_name'].str.lower() == song['artist'].lower())
-        ]
-        if not song_data.empty:
-            song_vectors.append(song_data.select_dtypes(include=np.number).iloc[0])
-    if not song_vectors:
-        return None
-    mean_vector = pd.concat(song_vectors)
+
+def get_recommendations(spotify_client, track_id, num_recommendations=5):
+    recommendations = spotify_client.recommendations(seed_tracks=[track_id], limit=num_recommendations)
+    recommended_tracks = recommendations['tracks']
+    recommended_songs = []
+    for track in recommended_tracks:
+        audio_features = spotify_client.audio_features(track['id'])[0]
+        song_data = {
+            'name': track['name'],
+            'artists': ', '.join([artist['name'] for artist in track['artists']]),
+            'id': track['id'],
+            'spotify_url': track['external_urls']['spotify'],
+            'danceability': audio_features['danceability'],
+            'energy': audio_features['energy'],
+            'valence': audio_features['valence']
+        }
+        recommended_songs.append(song_data)
+    return recommended_songs
+
+
+# Exploration des données
+if option == 'Exploration des données':
+    st.header('Exploration des données')
+    st.write('Aperçu des données :')
+    st.write(genre_data.head())
+    st.write('Informations sur le dataset :')
+    st.write(genre_data.info())
+    st.write('Statistiques descriptives :')
+    st.write(genre_data.describe())
+
+# Tendances par décennie
+elif option == 'Tendances par décennie':
+    st.header('Tendances par décennie')
+    year_data["decade"] = year_data["year"].apply(lambda x: (x // 10) * 10)
+    plt.figure(figsize=(10, 6))
+    sns.countplot(x='decade', data=year_data)
+    plt.title('Distribution des pistes par décennie')
+    plt.xlabel('Décennie')
+    plt.ylabel('Nombre de pistes')
+    plt.xticks(rotation=45)
+    st.pyplot(plt)
+
+# Recommandation musicale
+elif option == 'Recommandation musicale':
+    st.header('Système de Recommandation Musicale')
+
+    st.write('Choisissez une option de recommandation :')
+    menu_option = st.radio(
+        'Comment souhaitez-vous obtenir des recommandations ?',
+        ('Par nom de chanson', 'Recommandations basées sur une chanson existante')
+    )
+
+    if menu_option == 'Par nom de chanson':
+        song_name = st.text_input('Entrez le nom de la chanson :')
+        artist_name = st.text_input('Entrez le nom de l\'artiste (optionnel) :')
+
+        if st.button('Trouver la chanson et recommander'):
+            song_data = find_song(sp, song_name, artist_name)
+            if song_data:
+                st.write(f"Chanson trouvée : {song_data['name']} par {song_data['artists']}")
+                st.write(f"[Écouter sur Spotify]({song_data['spotify_url']})")
+                st.write('Caractéristiques de la chanson :')
+                st.json(song_data)
+
+                recommended_songs = get_recommendations(sp, song_data['id'])
+                st.write('Recommandations de chansons similaires :')
+                for song in recommended_songs:
+                    st.write(f"{song['name']} par {song['artists']} [Écouter sur Spotify]({song['spotify_url']})")
+                    st.write(
+                        f"Danceability: {song['danceability']}, Energy: {song['energy']}, Valence: {song['valence']}")
+                    st.write('---')
+            else:
+                st.write("Chanson non trouvée, veuillez vérifier les informations saisies.")
+
+    elif menu_option == 'Recommandations basées sur une chanson existante':
+        song_name = st.text_input('Entrez le nom de la chanson :')
+        artist_name = st.text_input('Entrez le nom de l\'artiste (optionnel) :')
+
+        if st.button('Trouver et recommander des chansons similaires'):
+            song_data = find_song(sp, song_name, artist_name)
+            if song_data:
+                st.write(f"Chanson trouvée : {song_data['name']} par {song_data['artists']}")
+                st.write(f"[Écouter sur Spotify]({song_data['spotify_url']})")
+                st.write('Caractéristiques de la chanson :')
+                st.json(song_data)
+
+                recommended_songs = get_recommendations(sp, song_data['id'])
+                st.write('Recommandations de chansons similaires :')
+                for song in recommended_songs:
+                    st.write(f"{song['name']} par {song['artists']} [Écouter sur Spotify]({song['spotify_url']})")
+                    st.write(
+                        f"Danceability: {song['danceability']}, Energy: {song['energy']}, Valence: {song['valence']}")
+                    st.write('---')
+            else:
+                st.write("Chanson non trouvée, veuillez vérifier les informations saisies.")
