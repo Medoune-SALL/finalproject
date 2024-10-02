@@ -171,4 +171,5 @@ elif option == 'Recommandation musicale':
                         f"Danceability: {song['danceability']}, Energy: {song['energy']}, Valence: {song['valence']}")
                     st.write('---')
             else:
-                st.write("Chanson non trouvée, veuillez vérifier les informations saisies.")
+                st.write("Chanson non trouvée, veuillez vérifier les informations saisies.")streamlit==1.25.0
+
